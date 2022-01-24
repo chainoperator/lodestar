@@ -60,10 +60,10 @@ function scoreToState(score: number): ScoreState {
 }
 
 export interface IPeerRpcScoreStore {
-  getScore(peer: PeerId): number;
-  getScoreState(peer: PeerId): ScoreState;
-  applyAction(peer: PeerId, action: PeerAction, actionName?: string): void;
-  update(peer: PeerId): void;
+  getScore(peer: PeerId): Promise<number>;
+  getScoreState(peer: PeerId): Promise<ScoreState>;
+  applyAction(peer: PeerId, action: PeerAction, actionName?: string): Promise<void>;
+  update(peer: PeerId): Promise<void>;
 }
 
 /**
@@ -78,35 +78,35 @@ export class PeerRpcScoreStore implements IPeerRpcScoreStore {
     this.store = store;
   }
 
-  getScore(peer: PeerId): number {
-    return this.store.rpcScore.get(peer) ?? DEFAULT_SCORE;
+  async getScore(peer: PeerId): Promise<number> {
+    return (await this.store.rpcScore.get(peer)) ?? DEFAULT_SCORE;
   }
 
-  getScoreState(peer: PeerId): ScoreState {
-    return scoreToState(this.getScore(peer));
+  async getScoreState(peer: PeerId): Promise<ScoreState> {
+    return scoreToState(await this.getScore(peer));
   }
 
-  applyAction(peer: PeerId, action: PeerAction, actionName?: string): void {
-    this.add(peer, peerActionScore[action]);
+  async applyAction(peer: PeerId, action: PeerAction, actionName?: string): Promise<void> {
+    await this.add(peer, peerActionScore[action]);
 
     // TODO: Log action to debug + do metrics
     actionName;
   }
 
-  update(peer: PeerId): void {
-    this.add(peer, 0);
+  update(peer: PeerId): Promise<void> {
+    return this.add(peer, 0);
   }
 
-  private decayScore(peer: PeerId, prevScore: number): number {
+  private async decayScore(peer: PeerId, prevScore: number): Promise<number> {
     const nowMs = Date.now();
-    const lastUpdate = this.store.rpcScoreLastUpdate.get(peer) ?? nowMs;
+    const lastUpdate = (await this.store.rpcScoreLastUpdate.get(peer)) ?? nowMs;
 
     // Decay the current score
     // Using exponential decay based on a constant half life.
     const sinceLastUpdateMs = nowMs - lastUpdate;
     // If peer was banned, lastUpdate will be in the future
     if (sinceLastUpdateMs > 0 && prevScore !== 0) {
-      this.store.rpcScoreLastUpdate.set(peer, nowMs);
+      await this.store.rpcScoreLastUpdate.set(peer, nowMs);
       // e^(-ln(2)/HL*t)
       const decayFactor = Math.exp(HALFLIFE_DECAY_MS * sinceLastUpdateMs);
       return prevScore * decayFactor;
@@ -115,10 +115,10 @@ export class PeerRpcScoreStore implements IPeerRpcScoreStore {
     }
   }
 
-  private add(peer: PeerId, scoreDelta: number): void {
-    const prevScore = this.getScore(peer);
+  private async add(peer: PeerId, scoreDelta: number): Promise<void> {
+    const prevScore = await this.getScore(peer);
 
-    let newScore = this.decayScore(peer, prevScore) + scoreDelta;
+    let newScore = (await this.decayScore(peer, prevScore)) + scoreDelta;
     if (newScore > MAX_SCORE) newScore = MAX_SCORE;
     if (newScore < MIN_SCORE) newScore = MIN_SCORE;
 
@@ -126,9 +126,9 @@ export class PeerRpcScoreStore implements IPeerRpcScoreStore {
     const newState = scoreToState(newScore);
     if (prevState !== ScoreState.Banned && newState === ScoreState.Banned) {
       // ban this peer for at least BANNED_BEFORE_DECAY_MS seconds
-      this.store.rpcScoreLastUpdate.set(peer, Date.now() + BANNED_BEFORE_DECAY_MS);
+      await this.store.rpcScoreLastUpdate.set(peer, Date.now() + BANNED_BEFORE_DECAY_MS);
     }
 
-    this.store.rpcScore.set(peer, newScore);
+    await this.store.rpcScore.set(peer, newScore);
   }
 }

@@ -21,11 +21,11 @@ describe("Libp2pPeerMetadataStore", function () {
       get: sinon.stub(),
       getValue: sinon.stub().callsFake(() => {
         return stored;
-      }) as SinonStub<[PeerId, string], Buffer>,
+      }) as SinonStub<[PeerId, string], Promise<Uint8Array | undefined>>,
       // TODO: fix upstream type (which also contains @ts-ignore)
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      set: sinon.stub().callsFake(
+      setValue: sinon.stub().callsFake(
         (peerId: PeerId, key: string, value: Buffer): ProtoBook => {
           stored = value;
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -35,16 +35,16 @@ describe("Libp2pPeerMetadataStore", function () {
     };
   });
 
-  it("can store and retrieve encoding", function () {
+  it("can store and retrieve encoding", async function () {
     const store = new Libp2pPeerMetadataStore(metabookStub);
     const value = ReqRespEncoding.SSZ_SNAPPY;
-    store.encoding.set(peerId, value);
-    const result = store.encoding.get(peerId);
+    await store.encoding.set(peerId, value);
+    const result = await store.encoding.get(peerId);
 
     expect(result).to.be.equal(value);
   });
 
-  it("can store and retrieve metadata", function () {
+  it("can store and retrieve metadata", async function () {
     const store = new Libp2pPeerMetadataStore(metabookStub);
     const value: altair.Metadata = {
       attnets: Array.from({length: 64}, () => true),
@@ -52,17 +52,17 @@ describe("Libp2pPeerMetadataStore", function () {
       // This will serialize fine, to 0x00
       syncnets: [],
     };
-    store.metadata.set(peerId, value);
-    const result = store.metadata.get(peerId);
+    await store.metadata.set(peerId, value);
+    const result = await store.metadata.get(peerId);
 
     expect(ssz.phase0.Metadata.equals(result as phase0.Metadata, value)).to.be.true;
   });
 
-  it("can store and retrieve score", function () {
+  it("can store and retrieve score", async function () {
     const store = new Libp2pPeerMetadataStore(metabookStub);
     const value = 80;
-    store.rpcScore.set(peerId, value);
-    const result = store.rpcScore.get(peerId);
+    await store.rpcScore.set(peerId, value);
+    const result = await store.rpcScore.get(peerId);
 
     expect(ssz.Number64.equals(result as number, value)).to.be.true;
   });

@@ -1,4 +1,4 @@
-import MetadataBook from "libp2p/src/peer-store/metadata-book";
+import {MetadataBook} from "libp2p/src/peer-store/types";
 import PeerId from "peer-id";
 import {altair, ssz} from "@chainsafe/lodestar-types";
 import {ReqRespEncoding} from "../reqresp";
@@ -15,8 +15,8 @@ export interface IPeerMetadataStore {
 }
 
 export type PeerStoreBucket<T> = {
-  set: (peer: PeerId, value: T) => void;
-  get: (peer: PeerId) => T | undefined;
+  set: (peer: PeerId, value: T) => Promise<void>;
+  get: (peer: PeerId) => Promise<T | undefined>;
 };
 
 type BucketSerdes<T> = {
@@ -60,18 +60,17 @@ export class Libp2pPeerMetadataStore implements IPeerMetadataStore {
 
   private typedStore<T>(key: string, type: BucketSerdes<T>): PeerStoreBucket<T> {
     return {
-      set: (peer: PeerId, value: T): void => {
+      set: async (peer: PeerId, value: T): Promise<void> => {
         if (value != null) {
           // TODO: fix upstream type (which also contains @ts-ignore)
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          this.metabook.set(peer, key, Buffer.from(type.serialize(value)));
+          return this.metabook.setValue(peer, key, Buffer.from(type.serialize(value)));
         } else {
-          this.metabook.deleteValue(peer, key);
+          return this.metabook.deleteValue(peer, key);
         }
       },
-      get: (peer: PeerId): T | undefined => {
-        const value = this.metabook.getValue(peer, key);
+      get: async (peer: PeerId): Promise<T | undefined> => {
+        const value = await this.metabook.getValue(peer, key);
         return value ? type.deserialize(value) : undefined;
       },
     };

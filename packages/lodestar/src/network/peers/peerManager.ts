@@ -152,7 +152,7 @@ export class PeerManager {
     this.networkEventBus.on(NetworkEvent.reqRespRequest, this.onRequest);
 
     // On start-up will connected to existing peers in libp2p.peerStore, same as autoDial behaviour
-    this.heartbeat();
+    await this.heartbeat();
     this.intervals = [
       setInterval(this.pingAndStatusTimeouts.bind(this), CHECK_PING_STATUS_INTERVAL),
       setInterval(this.heartbeat.bind(this), HEARTBEAT_INTERVAL_MS),
@@ -196,7 +196,7 @@ export class PeerManager {
     // Only if the slot is more than epoch away, add an event to start looking for peers
 
     // Request to run heartbeat fn
-    this.heartbeat();
+    void this.heartbeat();
   }
 
   /**
@@ -216,7 +216,7 @@ export class PeerManager {
   /**
    * Must be called when network ReqResp receives incoming requests
    */
-  private onRequest = (request: RequestTypedContainer, peer: PeerId): void => {
+  private onRequest = async (request: RequestTypedContainer, peer: PeerId): Promise<void> => {
     try {
       const peerData = this.connectedPeers.get(peer.toB58String());
       if (peerData) {
@@ -239,9 +239,9 @@ export class PeerManager {
   /**
    * Handle a PING request + response (rpc handler responds with PONG automatically)
    */
-  private onPing(peer: PeerId, seqNumber: phase0.Ping): void {
+  private async onPing(peer: PeerId, seqNumber: phase0.Ping): Promise<void> {
     // if the sequence number is unknown update the peer's metadata
-    const metadata = this.peerMetadata.metadata.get(peer);
+    const metadata = await this.peerMetadata.metadata.get(peer);
     if (!metadata || metadata.seqNumber < seqNumber) {
       void this.requestMetadata(peer);
     }
@@ -250,10 +250,10 @@ export class PeerManager {
   /**
    * Handle a METADATA request + response (rpc handler responds with METADATA automatically)
    */
-  private onMetadata(peer: PeerId, metadata: allForks.Metadata): void {
+  private async onMetadata(peer: PeerId, metadata: allForks.Metadata): Promise<void> {
     // Store metadata always in case the peer updates attnets but not the sequence number
     // Trust that the peer always sends the latest metadata (From Lighthouse)
-    this.peerMetadata.metadata.set(peer, {
+    return this.peerMetadata.metadata.set(peer, {
       ...metadata,
       syncnets: (metadata as Partial<altair.Metadata>).syncnets || [],
     });
@@ -314,7 +314,7 @@ export class PeerManager {
 
   private async requestMetadata(peer: PeerId): Promise<void> {
     try {
-      this.onMetadata(peer, await this.reqResp.metadata(peer));
+      await this.onMetadata(peer, await this.reqResp.metadata(peer));
     } catch (e) {
       // TODO: Downvote peer here or in the reqResp layer
     }
@@ -322,7 +322,7 @@ export class PeerManager {
 
   private async requestPing(peer: PeerId): Promise<void> {
     try {
-      this.onPing(peer, await this.reqResp.ping(peer));
+      await this.onPing(peer, await this.reqResp.ping(peer));
     } catch (e) {
       // TODO: Downvote peer here or in the reqResp layer
     }
@@ -350,13 +350,13 @@ export class PeerManager {
    * It will request discovery queries if the peer count has not reached the desired number of peers.
    * NOTE: Discovery should only add a new query if one isn't already queued.
    */
-  private heartbeat(): void {
+  private async heartbeat(): Promise<void> {
     const connectedPeers = this.getConnectedPeerIds();
 
     // ban and disconnect peers with bad score, collect rest of healthy peers
     const connectedHealthyPeers: PeerId[] = [];
     for (const peer of connectedPeers) {
-      switch (this.peerRpcScores.getScoreState(peer)) {
+      switch (await this.peerRpcScores.getScoreState(peer)) {
         case ScoreState.Banned:
           void this.goodbyeAndDisconnect(peer, GoodByeReasonCode.BANNED);
           break;
@@ -369,12 +369,14 @@ export class PeerManager {
     }
 
     const {peersToDisconnect, peersToConnect, attnetQueries, syncnetQueries} = prioritizePeers(
-      connectedHealthyPeers.map((peer) => ({
-        id: peer,
-        attnets: this.peerMetadata.metadata.get(peer)?.attnets ?? [],
-        syncnets: this.peerMetadata.metadata.get(peer)?.syncnets ?? [],
-        score: this.peerRpcScores.getScore(peer),
-      })),
+      await Promise.all(
+        connectedHealthyPeers.map(async (peer) => ({
+          id: peer,
+          attnets: (await this.peerMetadata.metadata.get(peer))?.attnets ?? [],
+          syncnets: (await this.peerMetadata.metadata.get(peer))?.syncnets ?? [],
+          score: await this.peerRpcScores.getScore(peer),
+        }))
+      ),
       // Collect subnets which we need peers for in the current slot
       this.attnetsService.getActiveSubnets(),
       this.syncnetsService.getActiveSubnets(),
@@ -522,7 +524,7 @@ export class PeerManager {
   }
 
   /** Register peer count metrics */
-  private runPeerCountMetrics(metrics: IMetrics): void {
+  private async runPeerCountMetrics(metrics: IMetrics): Promise<void> {
     let total = 0;
     const peersByDirection = new Map<string, number>();
     const peersByClient = new Map<string, number>();
@@ -531,7 +533,7 @@ export class PeerManager {
       if (openCnx) {
         const direction = openCnx.stat.direction;
         peersByDirection.set(direction, 1 + (peersByDirection.get(direction) ?? 0));
-        const client = getClientFromPeerStore(openCnx.remotePeer, this.libp2p.peerStore.metadataBook);
+        const client = await getClientFromPeerStore(openCnx.remotePeer, this.libp2p.peerStore.metadataBook);
         peersByClient.set(client, 1 + (peersByClient.get(client) ?? 0));
         total++;
       }

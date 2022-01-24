@@ -122,6 +122,9 @@ describe("network / peers / PeerManager", function () {
     // We get a ping by peer1, don't have it's metadata so it gets requested
     networkEventBus.emit(NetworkEvent.reqRespRequest, {method: ReqRespMethod.Ping, body: seqNumber}, peerId1);
 
+    // Allow to set metadata in onPing
+    await sleep(0);
+
     expect(reqResp.metadata.callCount).to.equal(1, "reqResp.metadata must be called once");
     expect(reqResp.metadata.getCall(0).args[0]).to.equal(peerId1, "reqResp.metadata must be called with peer1");
 
@@ -131,6 +134,9 @@ describe("network / peers / PeerManager", function () {
     // We get another ping by peer1, but with an already known seqNumber
     reqResp.metadata.reset();
     networkEventBus.emit(NetworkEvent.reqRespRequest, {method: ReqRespMethod.Ping, body: seqNumber}, peerId1);
+
+    // Allow to set metadata in onPing
+    await sleep(0);
 
     expect(reqResp.metadata.callCount).to.equal(0, "reqResp.metadata must not be called again");
   });
@@ -190,6 +196,6 @@ describe("network / peers / PeerManager", function () {
     expect(reqResp.status.callCount).to.equal(1, "reqResp.status must be called");
     expect(reqResp.metadata.callCount).to.equal(1, "reqResp.metadata must be called");
 
-    expect(peerMetadata.metadata.get(peerId1)).to.deep.equal(remoteMetadata, "Wrong stored metadata");
+    expect(await peerMetadata.metadata.get(peerId1)).to.deep.equal(remoteMetadata, "Wrong stored metadata");
   });
 });

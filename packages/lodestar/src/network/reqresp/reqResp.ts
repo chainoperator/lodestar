@@ -72,10 +72,10 @@ export class ReqResp implements IReqResp {
     this.metrics = modules.metrics;
   }
 
-  start(): void {
+  async start(): Promise<void> {
     this.controller = new AbortController();
     for (const [method, version, encoding] of protocolsSupported) {
-      this.libp2p.handle(
+      await this.libp2p.handle(
         formatProtocolId(method, version, encoding),
         (this.getRequestHandler({method, version, encoding}) as unknown) as (props: HandlerProps) => void
       );
@@ -83,9 +83,9 @@ export class ReqResp implements IReqResp {
     this.inboundRateLimiter.start();
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     for (const [method, version, encoding] of protocolsSupported) {
-      this.libp2p.unhandle(formatProtocolId(method, version, encoding));
+      await this.libp2p.unhandle(formatProtocolId(method, version, encoding));
     }
     this.controller.abort();
     this.inboundRateLimiter.stop();
@@ -152,7 +152,7 @@ export class ReqResp implements IReqResp {
     try {
       this.metrics?.reqRespOutgoingRequests.inc({method});
 
-      const encoding = this.peerMetadata.encoding.get(peerId) ?? Encoding.SSZ_SNAPPY;
+      const encoding = (await this.peerMetadata.encoding.get(peerId)) ?? Encoding.SSZ_SNAPPY;
       const result = await sendRequest<T>(
         {forkDigestContext: this.config, logger: this.logger, libp2p: this.libp2p},
         peerId,
@@ -177,7 +177,7 @@ export class ReqResp implements IReqResp {
       ) {
         this.metrics?.reqRespDialErrors.inc();
       }
-      if (peerAction !== null) this.peerRpcScores.applyAction(peerId, peerAction);
+      if (peerAction !== null) await this.peerRpcScores.applyAction(peerId, peerAction);
 
       throw e;
     }
@@ -190,7 +190,7 @@ export class ReqResp implements IReqResp {
       // TODO: Do we really need this now that there is only one encoding?
       // Remember the prefered encoding of this peer
       if (method === Method.Status) {
-        this.peerMetadata.encoding.set(peerId, encoding);
+        void this.peerMetadata.encoding.set(peerId, encoding);
       }
 
       try {
